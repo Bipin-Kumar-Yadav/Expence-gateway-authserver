@@ -36,6 +36,7 @@ public class UserValidationService {
     }
 
     public Mono<UserResponse> registerUser(UserResponse registerRequest){
+        log.info("Registering user with ID: {}", registerRequest.getUserId());
         return userWebClient.post()
                 .uri("/api/users/register")
                 .bodyValue(registerRequest)
