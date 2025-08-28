@@ -22,7 +22,6 @@ public class KeycloakUserSyncFilter implements WebFilter{
     private UserValidationService userValidationService;
     
     @Override
-    
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain){
         String token = exchange.getRequest().getHeaders().getFirst("Authorization");
 
@@ -35,26 +34,31 @@ public class KeycloakUserSyncFilter implements WebFilter{
                 log.warn("Unable to extract user details from token. Proceeding without user sync.");
                 return chain.filter(exchange);
         }
-
-        return userValidationService.validateUser(userResponse.getUserId())
+        final String userId = userResponse.getUserId();
+        return userValidationService.validateUser(userId)
                 .flatMap(exists -> {
                     if(!exists){
                         log.info("User with ID: {} does not exist. Registering user.", userResponse.getUserId());
                         return userValidationService.registerUser(userResponse)
-                            .then();
+                            .thenReturn(true);
                     } else {
                         log.info("User with ID: {} exists. Proceeding with the request.", userResponse.getUserId());
-                        return Mono.empty();
+                        return Mono.just(true);
                     }
                 })
-                .then(Mono.defer(()->{
-                    log.info("yaha to nhi aa rha h");
+                .flatMap(success -> {
+                    log.info("User validation/registration completed successfully");
                     ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                        .header("X-User-Id", userResponse.getUserId())
+                        .header("X-User-Id", userId)
                         .build();
 
                     return chain.filter(exchange.mutate().request(mutatedRequest).build());
-                }));
+                })
+                .onErrorResume(throwable -> {
+                    log.error("Error in user validation/registration: ", throwable);
+                    // Continue with original request even if user operations fail
+                    return chain.filter(exchange);
+                });
     }
 
     private UserResponse getUserDetails(String token){
